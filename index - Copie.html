@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Admin Cartes</title>
+
+<style>
+body {
+  background: #111;
+  color: white;
+  font-family: sans-serif;
+  text-align: center;
+}
+
+.container {
+  width: 600px;
+  margin: auto;
+}
+
+input, textarea, select {
+  width: 100%;
+  margin: 5px 0;
+}
+
+.card {
+  background: #222;
+  padding: 10px;
+  margin: 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+button {
+  margin: 5px;
+  padding: 8px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>🛠️ Admin Cartes</h1>
+
+<h3>Ajouter</h3>
+<select id="type">
+  <option value="challenge">Challenge</option>
+  <option value="event">Event</option>
+</select>
+<input id="title" placeholder="Titre">
+<textarea id="text" placeholder="Texte"></textarea>
+<button onclick="addCard()">Ajouter</button>
+
+<h3>Recherche</h3>
+<input id="search" placeholder="Recherche..." oninput="renderCards()">
+
+<select id="filterType" onchange="renderCards()">
+  <option value="">Tous</option>
+  <option value="challenge">Challenge</option>
+  <option value="event">Event</option>
+</select>
+
+<select id="filterOwner" onchange="renderCards()">
+  <option value="all">Tous les joueurs</option>
+  <option value="me">Mes cartes</option>
+</select>
+
+<h3>Actions</h3>
+<button onclick="exportAll()">Exporter tout</button>
+<button onclick="exportMine()">Exporter mes cartes</button>
+<button onclick="detectDuplicates()">Doublons</button>
+
+<div id="cards"></div>
+
+</div>
+
+<script type="module">
+
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, getDocs, collection, setDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+/* CONFIG */
+const firebaseConfig = {
+  apiKey: "AIzaSyCQrNoYpl0UUcB0QpfsJ5Fy9ybGi6WqD3Y",
+  authDomain: "jeu-de-cartes-14d39.firebaseapp.com",
+  projectId: "jeu-de-cartes-14d39",
+};
+
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+const db = getFirestore(app);
+
+/* USER */
+let userId = localStorage.getItem("userId");
+if (!userId) {
+  userId = "user_" + Math.random().toString(36).substring(2, 10);
+  localStorage.setItem("userId", userId);
+}
+
+let allCards = [];
+
+/* LOAD */
+async function loadCards() {
+  const snapshot = await getDocs(collection(db, "cards"));
+  allCards = snapshot.docs.map(d => d.data());
+}
+
+/* ADD */
+window.addCard = async function() {
+  const card = {
+    id: Date.now(),
+    type: document.getElementById("type").value,
+    title: document.getElementById("title").value,
+    text_fr: document.getElementById("text").value,
+    owner: userId,
+    created_at: Date.now()
+  };
+
+  await setDoc(doc(db, "cards", card.id.toString()), card);
+  loadAndRender();
+};
+
+/* DELETE */
+window.deleteCard = async function(id) {
+  await deleteDoc(doc(db, "cards", id.toString()));
+  loadAndRender();
+};
+
+/* UPDATE */
+window.updateCard = async function(id) {
+  const title = document.getElementById("title_"+id).value;
+  const text = document.getElementById("text_"+id).value;
+
+  const card = allCards.find(c => c.id === id);
+
+  await setDoc(doc(db, "cards", id.toString()), {
+    ...card,
+    title,
+    text_fr: text
+  });
+
+  loadAndRender();
+};
+
+/* RENDER */
+window.renderCards = function() {
+  const search = document.getElementById("search").value.toLowerCase();
+  const type = document.getElementById("filterType").value;
+  const owner = document.getElementById("filterOwner").value;
+
+  let list = allCards;
+
+  if (type) list = list.filter(c => c.type === type);
+  if (owner === "me") list = list.filter(c => c.owner === userId);
+
+  if (search) {
+    list = list.filter(c =>
+      c.title.toLowerCase().includes(search) ||
+      c.text_fr.toLowerCase().includes(search)
+    );
+  }
+
+  const container = document.getElementById("cards");
+  container.innerHTML = "";
+
+  list.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "card";
+
+    div.innerHTML = `
+      <small>${c.owner}</small><br>
+      <input id="title_${c.id}" value="${c.title}">
+      <textarea id="text_${c.id}">${c.text_fr}</textarea>
+      <button onclick="updateCard(${c.id})">💾</button>
+      <button onclick="deleteCard(${c.id})">🗑️</button>
+    `;
+
+    container.appendChild(div);
+  });
+};
+
+/* EXPORT */
+window.exportAll = function() {
+  download(allCards, "all_cards.json");
+};
+
+window.exportMine = function() {
+  const mine = allCards.filter(c => c.owner === userId);
+  download(mine, "my_cards.json");
+};
+
+function download(data, name) {
+  const blob = new Blob([JSON.stringify(data, null, 2)]);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+}
+
+/* DUPLICATES */
+window.detectDuplicates = function() {
+  const map = {};
+  const duplicates = [];
+
+  allCards.forEach(c => {
+    if (map[c.title]) duplicates.push(c.title);
+    map[c.title] = true;
+  });
+
+  alert(duplicates.length
+    ? "Doublons:\n" + duplicates.join("\n")
+    : "Aucun doublon");
+};
+
+/* INIT */
+async function loadAndRender() {
+  await loadCards();
+  renderCards();
+}
+
+loadAndRender();
+
+</script>
+
+</body>
+</html>
