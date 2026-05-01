@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Gestion des cartes</title>
+
+<style>
+body {
+  background: #111;
+  color: white;
+  font-family: sans-serif;
+  text-align: center;
+}
+
+.editor {
+  width: 400px;
+  margin: auto;
+}
+
+input, textarea, select {
+  width: 100%;
+  margin: 5px 0;
+}
+
+.card {
+  background: #222;
+  padding: 10px;
+  margin: 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+button {
+  margin: 5px;
+  padding: 8px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🗂️ Gestion des cartes</h1>
+
+<div class="editor">
+
+<h3>Ajouter une carte</h3>
+
+<select id="editType">
+  <option value="challenge">Challenge</option>
+  <option value="event">Event</option>
+</select>
+
+<input id="editTitle" placeholder="Titre">
+<textarea id="editText" placeholder="Texte"></textarea>
+
+<button onclick="addCard()">Ajouter</button>
+
+<h3>Importer JSON</h3>
+<textarea id="importJson"></textarea>
+<button onclick="importJSON()">Importer</button>
+
+<h3>Export</h3>
+<button onclick="exportJSON()">Exporter MES cartes</button>
+
+<h3>Mes cartes</h3>
+<button onclick="loadMyCards()">Afficher</button>
+
+<div id="cardsList"></div>
+
+</div>
+
+<script type="module">
+
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, getDocs, collection, setDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+/* CONFIG */
+const firebaseConfig = {
+  apiKey: "AIzaSyCQrNoYpl0UUcB0QpfsJ5Fy9ybGi6WqD3Y",
+  authDomain: "jeu-de-cartes-14d39.firebaseapp.com",
+  projectId: "jeu-de-cartes-14d39",
+};
+
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+const db = getFirestore(app);
+
+/* USER ID */
+let userId = localStorage.getItem("userId");
+if (!userId) {
+  userId = "user_" + Math.random().toString(36).substring(2, 10);
+  localStorage.setItem("userId", userId);
+}
+
+let allCards = [];
+
+/* LOAD */
+async function loadCards() {
+  const snapshot = await getDocs(collection(db, "cards"));
+  allCards = snapshot.docs.map(d => d.data());
+}
+
+/* ADD */
+window.addCard = async function() {
+  const type = document.getElementById("editType").value;
+  const title = document.getElementById("editTitle").value;
+  const text = document.getElementById("editText").value;
+
+  if (!title || !text) return alert("Champs manquants");
+
+  const card = {
+    id: Date.now(),
+    type,
+    title,
+    text_fr: text,
+    owner: userId
+  };
+
+  await setDoc(doc(db, "cards", card.id.toString()), card);
+
+  alert("Carte ajoutée !");
+};
+
+/* IMPORT */
+window.importJSON = async function() {
+  const input = document.getElementById("importJson").value;
+
+  try {
+    const parsed = JSON.parse(input);
+
+    for (const c of parsed) {
+      const card = {
+        id: Date.now() + Math.random(),
+        type: c.type,
+        title: c.title,
+        text_fr: c.text_fr,
+        owner: userId
+      };
+
+      await setDoc(doc(db, "cards", card.id.toString()), card);
+    }
+
+    alert("Import OK !");
+  } catch {
+    alert("JSON invalide");
+  }
+};
+
+/* LOAD MY CARDS */
+window.loadMyCards = async function() {
+  await loadCards();
+
+  const mine = allCards.filter(c => c.owner === userId);
+
+  const container = document.getElementById("cardsList");
+  container.innerHTML = "";
+
+  mine.forEach(card => {
+    const div = document.createElement("div");
+    div.className = "card";
+
+    div.innerHTML = `
+      <b>${card.title}</b> (${card.type})<br>
+      ${card.text_fr}<br>
+      <button onclick="deleteCard(${card.id})">Supprimer</button>
+    `;
+
+    container.appendChild(div);
+  });
+};
+
+/* DELETE */
+window.deleteCard = async function(id) {
+  await deleteDoc(doc(db, "cards", id.toString()));
+  loadMyCards();
+};
+
+/* EXPORT */
+window.exportJSON = async function() {
+  await loadCards();
+
+  const mine = allCards.filter(c => c.owner === userId);
+
+  const blob = new Blob([JSON.stringify(mine, null, 2)], {
+    type: "application/json"
+  });
+
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "mes_cartes.json";
+  a.click();
+
+  URL.revokeObjectURL(url);
+};
+
+</script>
+
+</body>
+</html>
